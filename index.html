@@ -163,11 +163,13 @@
 
     <script>
         // Configuração do Firebase
-        // Esta configuração é anônima e segura. Ela não requer chaves ou dados pessoais.
+        // IMPORTANTE: NUNCA COLOQUE AS SUAS CHAVES REAIS AQUI se este ficheiro for público.
+        // SUBSTITUA ESTE OBJETO PELO SEU PRÓPRIO CÓDIGO DO FIREBASE.
+        // Você pode encontrar isso no seu projeto do Firebase, em "Configurações do Projeto" > "Seus aplicativos"
         const firebaseConfig = {
-            apiKey: "AIzaSyBv3WXi-ZNDYkGebzvqEtuqG_NYKpAHolQ",
-            authDomain: "financas-10990.firebaseapp.com",
-            projectId: "financas-10990",
+            apiKey: "AIzaSyBv3WXi-ZNDYkGebzvqEtuqG_NYKpAHolQ", // Coloque a sua chave de API aqui
+            authDomain: "financas-10990.firebaseapp.com", // Coloque o seu domínio de autenticação aqui
+            projectId: "financas-10990", // Coloque o ID do seu projeto aqui
         };
 
         // Elementos do DOM
@@ -225,23 +227,28 @@
 
         // Inicialização do Firebase e autenticação anônima
         const initFirebase = async () => {
-            if (!firebase.apps.length) {
-                firebase.initializeApp(firebaseConfig);
-            }
-            db = firebase.firestore();
+            try {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                db = firebase.firestore();
 
-            // Gera um ID de usuário único e persistente para este navegador
-            let uniqueId = localStorage.getItem('uniqueUserId');
-            if (!uniqueId) {
-                uniqueId = 'user_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-                localStorage.setItem('uniqueUserId', uniqueId);
-            }
-            userId = uniqueId;
+                // Gera um ID de usuário único e persistente para este navegador
+                let uniqueId = localStorage.getItem('uniqueUserId');
+                if (!uniqueId) {
+                    uniqueId = 'user_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+                    localStorage.setItem('uniqueUserId', uniqueId);
+                }
+                userId = uniqueId;
 
-            // Carrega os dados do Firestore
-            carregarDados();
-            loadingDiv.classList.add('hidden');
-            mainContentDiv.classList.remove('hidden');
+                // Carrega os dados do Firestore
+                carregarDados();
+                loadingDiv.classList.add('hidden');
+                mainContentDiv.classList.remove('hidden');
+            } catch (error) {
+                loadingDiv.innerHTML = `<p class="text-red-500 text-center">Erro ao carregar. Por favor, verifique as suas credenciais do Firebase e a sua conexão com a internet.</p>`;
+                console.error("Erro de inicialização do Firebase:", error);
+            }
         };
 
         // Função para formatar o valor para moeda BRL
@@ -526,5 +533,4 @@
         window.onload = initFirebase;
     </script>
 </body>
-
 </html>
