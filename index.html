@@ -258,41 +258,72 @@ const initFirebase = () => {
         }
         db = firebase.firestore();
 
-        // 2. Verifica o estado da autenticação
+        // 2. Referências aos elementos do HTML
+        const loadingDiv = document.getElementById('loading');
+        const mainContentDiv = document.getElementById('main-content');
+        const telaLoginDiv = document.getElementById('tela-login');
+        const emailInput = document.getElementById('emailInput');
+        const passwordInput = document.getElementById('passwordInput');
+        const loginButton = document.getElementById('loginButton');
+        const registerButton = document.getElementById('registerButton');
+        const authError = document.getElementById('authError');
+        
+        // 3. Lógica Central de Autenticação
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
-                // UTILIZADOR JÁ ESTÁ LOGADO (anónimo ou não)
-                console.log("Utilizador já está logado:", user.uid);
+                // UTILIZADOR ESTÁ LOGADO
+                console.log("Utilizador autenticado:", user.uid);
                 userId = user.uid;
-                carregarDados(userId); // Carrega os dados para o utilizador logado
                 
-                // Mostra o conteúdo principal
-                loadingDiv.classList.add('hidden');
+                carregarDados(userId); // Carrega os dados do utilizador
+                
+                // Mostra a app, esconde o resto
                 mainContentDiv.classList.remove('hidden');
-
+                telaLoginDiv.classList.add('hidden');
+                loadingDiv.classList.add('hidden');
+                
             } else {
-                // UTILIZADOR NÃO ESTÁ LOGADO, VAMOS FAZER O LOGIN ANÓNIMO
-                console.log("Nenhum utilizador logado. A fazer login anónimo...");
-                firebase.auth().signInAnonymously()
-                    .then((credentials) => {
-                        console.log("Login anónimo bem-sucedido:", credentials.user.uid);
-                        userId = credentials.user.uid;
-                        carregarDados(userId); // Carrega os dados após o novo login
-                        
-                        // Mostra o conteúdo principal
-                        loadingDiv.classList.add('hidden');
-                        mainContentDiv.classList.remove('hidden');
-                    })
-                    .catch(error => {
-                        console.error("Erro no login anónimo:", error);
-                        loadingDiv.innerHTML = `<p class="text-red-500 text-center">Erro ao autenticar. Verifique a sua conexão.</p>`;
-                    });
+                // UTILIZADOR NÃO ESTÁ LOGADO
+                console.log("Nenhum utilizador autenticado.");
+                userId = null;
+
+                // Mostra a tela de login, esconde o resto
+                telaLoginDiv.classList.remove('hidden');
+                mainContentDiv.classList.add('hidden');
+                loadingDiv.classList.add('hidden');
             }
         });
 
+        // 4. Funções de Login e Registo nos botões
+        loginButton.addEventListener('click', () => {
+            authError.textContent = ''; // Limpa erros antigos
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            firebase.auth().signInWithEmailAndPassword(email, password)
+                .catch(error => {
+                    authError.textContent = "Erro: Email ou senha inválidos.";
+                    console.error("Erro de login:", error.message);
+                });
+        });
+
+        registerButton.addEventListener('click', () => {
+            authError.textContent = ''; // Limpa erros antigos
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            firebase.auth().createUserWithEmailAndPassword(email, password)
+                .then(userCredential => {
+                    console.log("Utilizador registado com sucesso:", userCredential.user);
+                    // O onAuthStateChanged vai detetar o novo login e mostrar a app
+                })
+                .catch(error => {
+                    authError.textContent = "Erro: " + error.message;
+                    console.error("Erro de registo:", error);
+                });
+        });
+
     } catch (error) {
-        loadingDiv.innerHTML = `<p class="text-red-500 text-center">Erro ao carregar. Por favor, verifique as suas credenciais do Firebase e a sua conexão com a internet.</p>`;
         console.error("Erro de inicialização do Firebase:", error);
+        document.body.innerHTML = '<p class="text-red-500 text-center mt-10">Erro crítico ao inicializar a aplicação.</p>';
     }
 };
 
@@ -582,6 +613,7 @@ initFirebase();
     </script>
 </body>
 </html>
+
 
 
 
