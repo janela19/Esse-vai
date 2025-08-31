@@ -229,30 +229,61 @@
         let orcamentos = {};
 
         // Inicialização do Firebase e autenticação anônima
-        const initFirebase = async () => {
-            try {
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(firebaseConfig);
-                }
-                db = firebase.firestore();
+        // Suas variáveis globais
+let db;
+let userId;
 
-                // Gera um ID de usuário único e persistente para este navegador
-                let uniqueId = localStorage.getItem('uniqueUserId');
-                if (!uniqueId) {
-                    uniqueId = 'user_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-                    localStorage.setItem('uniqueUserId', uniqueId);
-                }
-                userId = uniqueId;
+// A sua configuração do Firebase deve estar aqui
+// const firebaseConfig = { ... };
 
-                // Carrega os dados do Firestore
-                carregarDados();
+const initFirebase = () => {
+    try {
+        // 1. Inicializa o Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+
+        // 2. Verifica o estado da autenticação
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                // UTILIZADOR JÁ ESTÁ LOGADO (anónimo ou não)
+                console.log("Utilizador já está logado:", user.uid);
+                userId = user.uid;
+                carregarDados(userId); // Carrega os dados para o utilizador logado
+                
+                // Mostra o conteúdo principal
                 loadingDiv.classList.add('hidden');
                 mainContentDiv.classList.remove('hidden');
-            } catch (error) {
-                loadingDiv.innerHTML = `<p class="text-red-500 text-center">Erro ao carregar. Por favor, verifique as suas credenciais do Firebase e a sua conexão com a internet.</p>`;
-                console.error("Erro de inicialização do Firebase:", error);
+
+            } else {
+                // UTILIZADOR NÃO ESTÁ LOGADO, VAMOS FAZER O LOGIN ANÓNIMO
+                console.log("Nenhum utilizador logado. A fazer login anónimo...");
+                firebase.auth().signInAnonymously()
+                    .then((credentials) => {
+                        console.log("Login anónimo bem-sucedido:", credentials.user.uid);
+                        userId = credentials.user.uid;
+                        carregarDados(userId); // Carrega os dados após o novo login
+                        
+                        // Mostra o conteúdo principal
+                        loadingDiv.classList.add('hidden');
+                        mainContentDiv.classList.remove('hidden');
+                    })
+                    .catch(error => {
+                        console.error("Erro no login anónimo:", error);
+                        loadingDiv.innerHTML = `<p class="text-red-500 text-center">Erro ao autenticar. Verifique a sua conexão.</p>`;
+                    });
             }
-        };
+        });
+
+    } catch (error) {
+        loadingDiv.innerHTML = `<p class="text-red-500 text-center">Erro ao carregar. Por favor, verifique as suas credenciais do Firebase e a sua conexão com a internet.</p>`;
+        console.error("Erro de inicialização do Firebase:", error);
+    }
+};
+
+// Lembre-se de chamar a função para iniciar tudo
+initFirebase();
 
         // Função para formatar o valor para moeda BRL
         const formatarMoeda = (valor) => {
@@ -537,4 +568,5 @@
     </script>
 </body>
 </html>
+
 
