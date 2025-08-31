@@ -221,20 +221,12 @@
 
         // Referências Firestore
         let db;
-        let userId = 'user_id_12345'; // ID único para salvar os dados
+        let userId; 
 
         // Arrays locais para renderização
         let receitas = [];
         let despesas = [];
         let orcamentos = {};
-
-        // Inicialização do Firebase e autenticação anônima
-        // Suas variáveis globais
-let db;
-let userId;
-
-// A sua configuração do Firebase deve estar aqui
-// const firebaseConfig = { ... };
 
 const initFirebase = () => {
     try {
@@ -568,5 +560,6 @@ initFirebase();
     </script>
 </body>
 </html>
+
 
 
