@@ -135,7 +135,6 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
     <script>
-        // --- CONFIGURAÇÃO E ELEMENTOS DO DOM ---
         const firebaseConfig = {
   apiKey: "AIzaSyBv3WXi-ZNDYkGebzvqEtuqG_NYKpAHolQ",
   authDomain: "financas-10990.firebaseapp.com",
@@ -213,39 +212,50 @@
 
         const carregarDados = () => {
             if (!userId) return;
-            listeners.forEach(unsub => unsub());
-            listeners = [];
+            listeners.forEach(unsub => unsub()); listeners = [];
 
-            let unsubOrcamentos = db.collection(`users/${userId}/orcamentos`).onSnapshot(snapshot => {
+            const unsubOrcamentos = db.collection(`users/${userId}/orcamentos`).onSnapshot(snapshot => {
                 orcamentos = {};
                 snapshot.docs.forEach(doc => { orcamentos[doc.id] = doc.data(); });
                 atualizarSelectCategorias();
                 renderizarECalcular();
-            });
+            }, error => console.error("ERRO ao carregar orçamentos:", error));
 
-            let unsubReceitas = db.collection(`users/${userId}/receitas`).onSnapshot(snapshot => {
+            const unsubReceitas = db.collection(`users/${userId}/receitas`).onSnapshot(snapshot => {
                 const todasReceitas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                receitas = filtrarPorMes(todasReceitas);
+                receitas = filtrarPorMes(todasReceitas, 'receita');
                 renderizarECalcular();
-            });
+            }, error => console.error("ERRO ao carregar receitas:", error));
 
-            let unsubDespesas = db.collection(`users/${userId}/despesas`).onSnapshot(snapshot => {
+            const unsubDespesas = db.collection(`users/${userId}/despesas`).onSnapshot(snapshot => {
                 const todasDespesas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                despesas = filtrarPorMes(todasDespesas);
+                despesas = filtrarPorMes(todasDespesas, 'despesa');
                 renderizarECalcular();
-            });
+            }, error => console.error("ERRO ao carregar despesas:", error));
             
             listeners.push(unsubOrcamentos, unsubReceitas, unsubDespesas);
         };
 
-        const filtrarPorMes = (items) => {
-            const { primeiroDia, ultimoDia } = getLimitesDoMes();
+        const filtrarPorMes = (items, tipoLista) => {
+            const { ultimoDia } = getLimitesDoMes();
             return items.filter(item => {
                 const itemDate = item.data ? new Date(item.data + 'T12:00:00') : (item.timestamp ? item.timestamp.toDate() : null);
-                return itemDate && itemDate >= primeiroDia && itemDate <= ultimoDia;
+                if (!itemDate) return false;
+
+                if (item.serieId) {
+                    const { primeiroDia, ultimoDia: fimDoMes } = getLimitesDoMes();
+                    return itemDate >= primeiroDia && itemDate <= fimDoMes;
+                }
+                
+                if (tipoLista === 'receita' || item.tipo === 'fixa') {
+                    return itemDate <= ultimoDia;
+                }
+                
+                const { primeiroDia, ultimoDia: fimDoMesVariavel } = getLimitesDoMes();
+                return itemDate >= primeiroDia && itemDate <= fimDoMesVariavel;
             });
         };
-
+        
         const renderizarECalcular = () => { renderizarListas(); calcularTotais(); };
 
         const renderizarListas = () => {
@@ -263,15 +273,17 @@
             lista.forEach(item => {
                 const itemDiv = document.createElement('div');
                 itemDiv.className = 'flex justify-between items-center py-2 border-b last:border-b-0';
-                const nome = item.totalParcelas ? `${item.nome} (${item.parcelaAtual}/${item.totalParcelas})` : item.nome;
+                
+                const nome = item.serieId ? `${item.nome} (${item.parcelaAtual}/${item.totalParcelas})` : item.nome;
                 const categoriaSpan = item.categoria ? `<span class="text-xs text-gray-400">(${item.categoria})</span>` : '';
                 const corValor = tipo === 'receita' ? 'text-green-600' : (item.tipo === 'fixa' ? 'text-red-600' : 'text-orange-600');
+                
                 itemDiv.innerHTML = `
                     <div class="flex flex-col"><span class="text-sm font-medium text-gray-600">${nome}</span>${categoriaSpan}</div>
                     <div class="flex items-center gap-2">
                         <span class="text-sm font-semibold ${corValor}">${formatarMoeda(item.valor)}</span>
                         <button onclick="editarItem('${item.id}', '${tipo}')" class="text-blue-500 hover:text-blue-700 p-1 text-xs">Editar</button>
-                        <button onclick="removerItem('${tipo}', '${item.id}')" class="bg-red-100 text-red-600 p-1 rounded-full hover:bg-red-200">
+                        <button onclick="removerItem('${item.id}', '${tipo}')" class="bg-red-100 text-red-600 p-1 rounded-full hover:bg-red-200">
                            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm6 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
                         </button>
                     </div>`;
@@ -290,7 +302,7 @@
                         <span class="text-lg font-semibold text-purple-700">${categoria}</span>
                         <div>
                            <button onclick="editarOrcamento('${categoria}')" class="text-blue-500 hover:text-blue-700 p-1 text-xs mr-1">Editar</button>
-                           <button onclick="removerItem('orcamento', '${categoria}')" class="bg-red-100 text-red-600 p-1 rounded-full hover:bg-red-200">
+                           <button onclick="removerItem('${categoria}', 'orcamento')" class="bg-red-100 text-red-600 p-1 rounded-full hover:bg-red-200">
                                <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm6 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
                            </button>
                         </div>
@@ -301,7 +313,126 @@
             });
             atualizarProgressoOrcamentos();
         };
+
+        const getUniqueId = () => db.collection(`users`).doc().id;
+
+        const adicionarItemComParcelas = async (colecao, docData, totalParcelas, parcelaAtual, data) => {
+            const serieId = (totalParcelas > 1) ? getUniqueId() : null;
+            const totalDeParcelasParaCriar = totalParcelas - parcelaAtual + 1;
+            const batch = db.batch();
+            
+            for (let i = 0; i < totalDeParcelasParaCriar; i++) {
+                const dataParcela = new Date(data + 'T12:00:00');
+                dataParcela.setMonth(dataParcela.getMonth() + i);
+                
+                const newDocRef = db.collection(`users/${userId}/${colecao}`).doc();
+                batch.set(newDocRef, { 
+                    ...docData,
+                    data: dataParcela.toISOString().split('T')[0], 
+                    parcelaAtual: parcelaAtual + i, 
+                    totalParcelas, 
+                    serieId, 
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+            await batch.commit();
+        };
         
+        window.adicionarReceita = () => {
+            const nome = receitaNomeInput.value.trim(), valor = parseFloat(receitaValorInput.value), parcelaAtual = parseInt(receitaParcelaInput.value) || 1, totalParcelas = parseInt(receitaTotalParcelasInput.value) || 1;
+            let data = receitaDataInput.value;
+            if (!data) data = new Date().toISOString().split('T')[0];
+            if (nome && !isNaN(valor) && valor > 0) {
+                adicionarItemComParcelas('receitas', { nome, valor }, totalParcelas, parcelaAtual, data);
+                [receitaNomeInput, receitaValorInput, receitaDataInput, receitaParcelaInput, receitaTotalParcelasInput].forEach(i => i.value = '');
+            } else { alert("Por favor, preencha nome e valor válidos."); }
+        };
+        
+        window.adicionarDespesa = (tipo) => {
+            let nome, valor, data, categoria = '', parcelaAtual = 1, totalParcelas = 1, inputsParaLimpar = [];
+            if (tipo === 'fixa') {
+                nome = despesaFixaNomeInput.value.trim(); valor = parseFloat(despesaFixaValorInput.value); data = despesaFixaDataInput.value;
+                parcelaAtual = parseInt(despesaFixaParcelaInput.value) || 1; totalParcelas = parseInt(despesaFixaTotalParcelasInput.value) || 1;
+                inputsParaLimpar = [despesaFixaNomeInput, despesaFixaValorInput, despesaFixaDataInput, despesaFixaParcelaInput, despesaFixaTotalParcelasInput];
+            } else {
+                nome = despesaVariavelNomeInput.value.trim(); valor = parseFloat(despesaVariavelValorInput.value); data = despesaVariavelDataInput.value;
+                categoria = despesaCategoriaSelect.value;
+                inputsParaLimpar = [despesaVariavelNomeInput, despesaVariavelValorInput, despesaVariavelDataInput, despesaCategoriaSelect];
+            }
+            if (!data) data = new Date().toISOString().split('T')[0];
+            if (nome && !isNaN(valor) && valor > 0) {
+                const docData = { nome, valor, tipo, categoria };
+                adicionarItemComParcelas('despesas', docData, (tipo === 'fixa' ? totalParcelas : 1), (tipo === 'fixa' ? parcelaAtual : 1), data);
+                inputsParaLimpar.forEach(i => i.value = '');
+                if (tipo === 'variavel') showFeedback();
+            } else { alert("Por favor, preencha nome e valor válidos."); }
+        };
+
+        window.adicionarOrcamento = async () => { /* ... (código inalterado) ... */ };
+        
+        window.removerItem = async (id, tipo) => {
+            const colecoes = { receita: 'receitas', despesaFixa: 'despesas', despesaVariavel: 'despesas', orcamento: 'orcamentos' };
+            const colecao = colecoes[tipo]; if (!colecao) return;
+
+            const docRef = db.collection(`users/${userId}/${colecao}`).doc(id);
+            const doc = await docRef.get();
+            if(!doc.exists) return;
+            const item = doc.data();
+
+            if (item.serieId) {
+                const confirmacao = confirm("Este é um item parcelado. Deseja remover esta e todas as parcelas futuras desta série?");
+                if (!confirmacao) return;
+                
+                const querySnapshot = await db.collection(`users/${userId}/${colecao}`).where('serieId', '==', item.serieId).where('parcelaAtual', '>=', item.parcelaAtual).get();
+                const batch = db.batch();
+                querySnapshot.docs.forEach(d => batch.delete(d.ref));
+                await batch.commit();
+                alert("Parcelas futuras removidas com sucesso!");
+            } else {
+                await docRef.delete();
+            }
+        };
+
+        window.editarItem = async (id, tipo) => {
+            const colecoes = { receita: 'receitas', despesaFixa: 'despesas', despesaVariavel: 'despesas' };
+            const colecao = colecoes[tipo]; if (!colecao) return;
+            
+            const docRef = db.collection(`users/${userId}/${colecao}`).doc(id);
+            const doc = await docRef.get();
+            if (!doc.exists) return;
+            
+            const itemAtual = doc.data();
+
+            if (itemAtual.serieId) {
+                alert("Para editar um item parcelado, por favor, remova a série e adicione-a novamente com os valores corretos.");
+                return;
+            }
+
+            const nomeNovo = prompt("Editar nome:", itemAtual.nome);
+            if(nomeNovo === null) return;
+            const valorNovoStr = prompt("Editar valor:", itemAtual.valor);
+            if(valorNovoStr === null) return;
+            
+            const valorNovo = parseFloat(valorNovoStr);
+            if (!nomeNovo.trim() || isNaN(valorNovo) || valorNovo <= 0) return alert("Nome ou valor inválido.");
+
+            const totalParcelasStr = prompt("Deseja transformar este item em parcelas? Se sim, digite o número TOTAL de parcelas (ex: 12). Deixe em branco para apenas salvar a edição.", "1");
+            const totalParcelas = parseInt(totalParcelasStr) || 1;
+
+            if (totalParcelas > 1) {
+                const confirmacao = confirm(`Isto irá apagar o item original e criar uma nova série de ${totalParcelas} parcelas para '${nomeNovo}'. Deseja continuar?`);
+                if (confirmacao) {
+                    await docRef.delete();
+                    const docData = { nome: nomeNovo, valor: valorNovo, tipo: itemAtual.tipo, categoria: itemAtual.categoria };
+                    adicionarItemComParcelas(colecao, docData, totalParcelas, 1, itemAtual.data);
+                }
+            } else {
+                await docRef.update({ nome: nomeNovo, valor: valorNovo });
+            }
+        };
+        
+        window.editarOrcamento = async (nomeAntigo) => { /* ... (código inalterado) ... */ };
+
         const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
         const getLimitesDoMes = () => {
             const primeiroDia = new Date(dataDeReferencia.getFullYear(), dataDeReferencia.getMonth(), 1);
@@ -310,8 +441,7 @@
         };
         const showFeedback = () => {
             feedbackText.textContent = feedbackMessages[Math.floor(Math.random() * feedbackMessages.length)];
-            feedbackMessage.classList.remove('hidden');
-            feedbackMessage.classList.remove('opacity-0');
+            feedbackMessage.classList.remove('hidden', 'opacity-0');
             setTimeout(() => {
                 feedbackMessage.classList.add('opacity-0');
                 setTimeout(() => { feedbackMessage.classList.add('hidden'); }, 300);
@@ -355,105 +485,6 @@
                 }
                 if (totalGastoSpan) totalGastoSpan.textContent = `${formatarMoeda(totalGasto)}`;
             });
-        };
-
-        window.adicionarReceita = () => {
-            const nome = receitaNomeInput.value.trim();
-            const valor = parseFloat(receitaValorInput.value);
-            let data = receitaDataInput.value;
-            const parcelaAtual = parseInt(receitaParcelaInput.value) || 1;
-            const totalParcelas = parseInt(receitaTotalParcelasInput.value) || 1;
-            if (!data) data = new Date().toISOString().split('T')[0];
-            if (nome && !isNaN(valor) && valor > 0) {
-                const totalDeParcelasParaCriar = totalParcelas - parcelaAtual + 1;
-                for (let i = 0; i < totalDeParcelasParaCriar; i++) {
-                    const dataParcela = new Date(data + 'T12:00:00');
-                    dataParcela.setMonth(dataParcela.getMonth() + i);
-                    const doc = { nome, valor, data: dataParcela.toISOString().split('T')[0], parcelaAtual: parcelaAtual + i, totalParcelas, timestamp: firebase.firestore.FieldValue.serverTimestamp() };
-                    db.collection(`users/${userId}/receitas`).add(doc);
-                }
-                [receitaNomeInput, receitaValorInput, receitaDataInput, receitaParcelaInput, receitaTotalParcelasInput].forEach(i => i.value = '');
-            } else { alert("Por favor, preencha nome e valor válidos."); }
-        };
-        
-        window.adicionarDespesa = (tipo) => {
-            let nome, valor, data, categoria = '', parcelaAtual = 1, totalParcelas = 1, inputsParaLimpar = [];
-            if (tipo === 'fixa') {
-                nome = despesaFixaNomeInput.value.trim();
-                valor = parseFloat(despesaFixaValorInput.value);
-                data = despesaFixaDataInput.value;
-                parcelaAtual = parseInt(despesaFixaParcelaInput.value) || 1;
-                totalParcelas = parseInt(despesaFixaTotalParcelasInput.value) || 1;
-                inputsParaLimpar = [despesaFixaNomeInput, despesaFixaValorInput, despesaFixaDataInput, despesaFixaParcelaInput, despesaFixaTotalParcelasInput];
-            } else {
-                nome = despesaVariavelNomeInput.value.trim();
-                valor = parseFloat(despesaVariavelValorInput.value);
-                data = despesaVariavelDataInput.value;
-                categoria = despesaCategoriaSelect.value;
-                inputsParaLimpar = [despesaVariavelNomeInput, despesaVariavelValorInput, despesaVariavelDataInput, despesaCategoriaSelect];
-            }
-            if (!data) data = new Date().toISOString().split('T')[0];
-            if (nome && !isNaN(valor) && valor > 0) {
-                 const totalDeParcelasParaCriar = totalParcelas - parcelaAtual + 1;
-                 for (let i = 0; i < totalDeParcelasParaCriar; i++) {
-                    const dataParcela = new Date(data + 'T12:00:00');
-                    dataParcela.setMonth(dataParcela.getMonth() + i);
-                    const doc = { nome, valor, tipo, categoria, data: dataParcela.toISOString().split('T')[0], parcelaAtual: parcelaAtual + i, totalParcelas, timestamp: firebase.firestore.FieldValue.serverTimestamp() };
-                    db.collection(`users/${userId}/despesas`).add(doc);
-                }
-                inputsParaLimpar.forEach(i => i.value = '');
-                if (tipo === 'variavel') showFeedback();
-            } else { alert("Por favor, preencha nome e valor válidos."); }
-        };
-
-        window.adicionarOrcamento = async () => {
-            const nome = categoriaNomeInput.value.trim();
-            const valor = parseFloat(categoriaValorInput.value);
-            if (nome && !isNaN(valor) && valor > 0) {
-                await db.collection(`users/${userId}/orcamentos`).doc(nome).set({ valor });
-                categoriaNomeInput.value = ''; categoriaValorInput.value = '';
-            } else { alert("Por favor, insira um nome e um valor válido para o orçamento."); }
-        };
-        
-        window.removerItem = async (tipo, id) => {
-            const colecoes = { receita: 'receitas', despesaFixa: 'despesas', despesaVariavel: 'despesas', orcamento: 'orcamentos' };
-            if (colecoes[tipo]) await db.collection(`users/${userId}/${colecoes[tipo]}`).doc(id).delete();
-        };
-
-        window.editarOrcamento = async (nomeAntigo) => {
-            const orcamentoAtual = orcamentos[nomeAntigo];
-            if (!orcamentoAtual) return;
-            const nomeNovo = prompt("Editar nome da categoria:", nomeAntigo);
-            const valorNovoStr = prompt("Editar valor do orçamento:", orcamentoAtual.valor);
-            if (nomeNovo === null || valorNovoStr === null) return;
-            const valorNovo = parseFloat(valorNovoStr);
-            if (!nomeNovo.trim() || isNaN(valorNovo) || valorNovo <= 0) return alert("Nome ou valor inválido.");
-            try {
-                if (nomeNovo !== nomeAntigo) {
-                    await db.collection(`users/${userId}/orcamentos`).doc(nomeAntigo).delete();
-                    await db.collection(`users/${userId}/orcamentos`).doc(nomeNovo).set({ valor: valorNovo });
-                } else {
-                    await db.collection(`users/${userId}/orcamentos`).doc(nomeAntigo).update({ valor: valorNovo });
-                }
-            } catch (e) { console.error("Erro ao atualizar orçamento: ", e); }
-        };
-        
-        window.editarItem = async (id, tipo) => {
-            const colecoes = { receita: 'receitas', despesaFixa: 'despesas', despesaVariavel: 'despesas' };
-            const colecao = colecoes[tipo];
-            if (!colecao) return;
-            try {
-                const docRef = db.collection(`users/${userId}/${colecao}`).doc(id);
-                const doc = await docRef.get();
-                if (!doc.exists) return;
-                const itemAtual = doc.data();
-                const nomeNovo = prompt("Editar nome:", itemAtual.nome);
-                const valorNovoStr = prompt("Editar valor:", itemAtual.valor);
-                if (nomeNovo === null || valorNovoStr === null) return;
-                const valorNovo = parseFloat(valorNovoStr);
-                if (!nomeNovo.trim() || isNaN(valorNovo) || valorNovo <= 0) return alert("Nome ou valor inválido.");
-                await docRef.update({ nome: nomeNovo, valor: valorNovo });
-            } catch (e) { console.error("Erro ao atualizar o item:", e); }
         };
 
         window.onload = initFirebase;
