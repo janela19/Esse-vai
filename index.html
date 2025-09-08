@@ -165,6 +165,29 @@
         let dataDeReferencia = new Date();
         const feedbackMessages = ["Obrigado por fazer isso!", "Ei... já falei o quão você é incrível hoje?", "Nossa, como você é linda(o) quando faz isso", "Quer? Quer? Quer?", "E de quem é a comida do pitoco?", "Quando olhei para seus olhos foi como se perdesse no oceano da sua alma", "Você é o meu amor, e juntos somos uma equipe imbatível.", "Meu maior tesouro não está aqui, mas sim em você.", "Cada despesa registrada é um passo nosso rumo aos nossos sonhos.", "Não há desafio financeiro que a gente não possa vencer.", "Sua dedicação me inspira. Eu te amo!", "Fico tão feliz por estarmos nessa jornada juntos.", "Nossa parceria vale mais do que qualquer dinheiro.", "Você é a pessoa mais dedicada que eu conheço.", "Estou aqui com você em cada real, em cada sonho.", "A felicidade é o nosso maior lucro."];
 
+        // --- FUNÇÕES UTILITÁRIAS ---
+const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+
+const getLimitesDoMes = () => {
+    const primeiroDia = new Date(dataDeReferencia.getFullYear(), dataDeReferencia.getMonth(), 1);
+    const ultimoDia = new Date(dataDeReferencia.getFullYear(), dataDeReferencia.getMonth() + 1, 0);
+    return { primeiroDia, ultimoDia };
+};
+
+const showFeedback = () => {
+    const randomMessage = feedbackMessages[Math.floor(Math.random() * feedbackMessages.length)];
+    feedbackText.textContent = randomMessage;
+    feedbackMessage.classList.remove('hidden', 'opacity-0');
+    feedbackMessage.classList.add('opacity-100');
+    setTimeout(() => {
+        feedbackMessage.classList.remove('opacity-100');
+        feedbackMessage.classList.add('opacity-0');
+        setTimeout(() => {
+            feedbackMessage.classList.add('hidden');
+        }, 300);
+    }, 2000);
+};
+        
         // --- INICIALIZAÇÃO ---
         const initFirebase = () => {
             try {
@@ -276,3 +299,4 @@
     </script>
 </body>
 </html>
+
