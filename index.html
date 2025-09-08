@@ -135,7 +135,6 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
     <script>
-        // --- CONFIGURAÇÃO E ELEMENTOS DO DOM ---
         const firebaseConfig = {
   apiKey: "AIzaSyBv3WXi-ZNDYkGebzvqEtuqG_NYKpAHolQ",
   authDomain: "financas-10990.firebaseapp.com",
@@ -146,7 +145,7 @@
   appId: "1:1004648523304:web:dabdd7ceed7c88640cb71d",
   measurementId: "G-TSYWV6N6Y1"
 };
-
+        // DOM Elements
         const loadingDiv = document.getElementById('loading'), mainContentDiv = document.getElementById('main-content');
         const receitaNomeInput = document.getElementById('receitaNome'), receitaValorInput = document.getElementById('receitaValor'), receitaDataInput = document.getElementById('receitaData'), receitaParcelaInput = document.getElementById('receitaParcela'), receitaTotalParcelasInput = document.getElementById('receitaTotalParcelas');
         const despesaFixaNomeInput = document.getElementById('despesaFixaNome'), despesaFixaValorInput = document.getElementById('despesaFixaValor'), despesaFixaDataInput = document.getElementById('despesaFixaData'), despesaFixaParcelaInput = document.getElementById('despesaFixaParcela'), despesaFixaTotalParcelasInput = document.getElementById('despesaFixaTotalParcelas');
@@ -214,7 +213,7 @@
         const carregarDados = () => {
             if (!userId) return;
             listeners.forEach(unsub => unsub()); listeners = [];
-            
+
             const unsubOrcamentos = db.collection(`users/${userId}/orcamentos`).onSnapshot(snapshot => {
                 orcamentos = {};
                 snapshot.docs.forEach(doc => { orcamentos[doc.id] = doc.data(); });
@@ -314,9 +313,11 @@
             const serieId = (totalParcelas > 1) ? getUniqueId() : null;
             const totalDeParcelasParaCriar = totalParcelas - parcelaAtual + 1;
             const batch = db.batch();
+            
             for (let i = 0; i < totalDeParcelasParaCriar; i++) {
-                const dataParcela = new Date(data + 'T12:00:00');
-                dataParcela.setMonth(dataParcela.getMonth() + i);
+                const dataBase = new Date(data + 'T12:00:00');
+                const dataParcela = new Date(dataBase.getFullYear(), dataBase.getMonth() + i, dataBase.getDate());
+                
                 const newDocRef = db.collection(`users/${userId}/${colecao}`).doc();
                 const docFinal = { ...docData, data: dataParcela.toISOString().split('T')[0], parcelaAtual: parcelaAtual + i, totalParcelas, serieId, timestamp: firebase.firestore.FieldValue.serverTimestamp() };
                 if (colecao === 'receitas') { delete docFinal.tipo; delete docFinal.categoria; }
@@ -384,9 +385,11 @@
         window.editarItem = async (id, tipo) => {
             const colecoes = { receita: 'receitas', despesaFixa: 'despesas', despesaVariavel: 'despesas' };
             const colecao = colecoes[tipo]; if (!colecao) return;
+            
             const docRef = db.collection(`users/${userId}/${colecao}`).doc(id);
             const doc = await docRef.get();
             if (!doc.exists) return;
+            
             const itemAtual = doc.data();
 
             if (itemAtual.serieId) {
@@ -396,6 +399,7 @@
 
             const nomeNovo = prompt("Editar nome:", itemAtual.nome); if(nomeNovo === null) return;
             const valorNovoStr = prompt("Editar valor:", itemAtual.valor); if(valorNovoStr === null) return;
+            
             const valorNovo = parseFloat(valorNovoStr);
             if (!nomeNovo.trim() || isNaN(valorNovo) || valorNovo <= 0) return alert("Nome ou valor inválido.");
 
@@ -411,8 +415,9 @@
                         const confirmacao = confirm(`Isto irá apagar o item original e criar uma nova série de ${totalParcelas} parcelas para '${nomeNovo}', começando na parcela ${parcelaAtual}. Deseja continuar?`);
                         if (confirmacao) {
                             await docRef.delete();
+                            const dataOriginal = itemAtual.data ? itemAtual.data : (itemAtual.timestamp ? itemAtual.timestamp.toDate().toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
                             const docData = { nome: nomeNovo, valor: valorNovo, tipo: itemAtual.tipo, categoria: itemAtual.categoria };
-                            adicionarItemComParcelas(colecao, docData, totalParcelas, parcelaAtual, itemAtual.data);
+                            adicionarItemComParcelas(colecao, docData, totalParcelas, parcelaAtual, dataOriginal);
                         }
                         return;
                     }
@@ -421,7 +426,20 @@
             await docRef.update({ nome: nomeNovo, valor: valorNovo });
         };
         
-        window.editarOrcamento = async (nomeAntigo) => { /* ... (código inalterado) ... */ };
+        window.editarOrcamento = async (nomeAntigo) => {
+            const orcamentoAtual = orcamentos[nomeAntigo]; if (!orcamentoAtual) return;
+            const nomeNovo = prompt("Editar nome da categoria:", nomeAntigo);
+            const valorNovoStr = prompt("Editar valor do orçamento:", orcamentoAtual.valor);
+            if (nomeNovo === null || valorNovoStr === null) return;
+            const valorNovo = parseFloat(valorNovoStr);
+            if (!nomeNovo.trim() || isNaN(valorNovo) || valorNovo <= 0) return alert("Nome ou valor inválido.");
+            try {
+                if (nomeNovo !== nomeAntigo) {
+                    await db.collection(`users/${userId}/orcamentos`).doc(nomeAntigo).delete();
+                    await db.collection(`users/${userId}/orcamentos`).doc(nomeNovo).set({ valor: valorNovo });
+                } else { await db.collection(`users/${userId}/orcamentos`).doc(nomeAntigo).update({ valor: valorNovo }); }
+            } catch (e) { console.error("Erro ao atualizar orçamento: ", e); }
+        };
 
         const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
         const getLimitesDoMes = () => {
@@ -429,7 +447,15 @@
             const ultimoDia = new Date(dataDeReferencia.getFullYear(), dataDeReferencia.getMonth() + 1, 0);
             return { primeiroDia, ultimoDia };
         };
-        const showFeedback = () => { /* ... (código inalterado) ... */ };
+        const showFeedback = () => {
+            feedbackText.textContent = feedbackMessages[Math.floor(Math.random() * feedbackMessages.length)];
+            feedbackMessage.classList.remove('hidden');
+            feedbackMessage.classList.remove('opacity-0');
+            setTimeout(() => {
+                feedbackMessage.classList.add('opacity-0');
+                setTimeout(() => { feedbackMessage.classList.add('hidden'); }, 300);
+            }, 2000);
+        };
         const calcularTotais = () => {
             const totalReceitas = receitas.reduce((acc, item) => acc + item.valor, 0);
             const totalDespesas = despesas.reduce((acc, item) => acc + item.valor, 0);
