@@ -10,7 +10,7 @@
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1f2937; }
         .progress-bar-container { width: 100%; background-color: #e5e7eb; border-radius: 9999px; overflow: hidden; height: 1rem; }
         .progress-bar { height: 100%; transition: width 0.5s ease-in-out; border-radius: 9999px; }
-        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.8); display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 1.5rem; color: #333; z-index: 100; }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 1.5rem; color: #333; z-index: 100; }
         .loading-spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         #feedback-message { z-index: 1000; }
@@ -164,30 +164,8 @@
         let receitas = [], despesas = [], orcamentos = {};
         let dataDeReferencia = new Date();
         const feedbackMessages = ["Obrigado por fazer isso!", "Ei... já falei o quão você é incrível hoje?", "Nossa, como você é linda(o) quando faz isso", "Quer? Quer? Quer?", "E de quem é a comida do pitoco?", "Quando olhei para seus olhos foi como se perdesse no oceano da sua alma", "Você é o meu amor, e juntos somos uma equipe imbatível.", "Meu maior tesouro não está aqui, mas sim em você.", "Cada despesa registrada é um passo nosso rumo aos nossos sonhos.", "Não há desafio financeiro que a gente não possa vencer.", "Sua dedicação me inspira. Eu te amo!", "Fico tão feliz por estarmos nessa jornada juntos.", "Nossa parceria vale mais do que qualquer dinheiro.", "Você é a pessoa mais dedicada que eu conheço.", "Estou aqui com você em cada real, em cada sonho.", "A felicidade é o nosso maior lucro."];
+        let listeners = []; // Para gerir os listeners do Firestore e evitar memory leaks
 
-        // --- FUNÇÕES UTILITÁRIAS ---
-const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
-
-const getLimitesDoMes = () => {
-    const primeiroDia = new Date(dataDeReferencia.getFullYear(), dataDeReferencia.getMonth(), 1);
-    const ultimoDia = new Date(dataDeReferencia.getFullYear(), dataDeReferencia.getMonth() + 1, 0);
-    return { primeiroDia, ultimoDia };
-};
-
-const showFeedback = () => {
-    const randomMessage = feedbackMessages[Math.floor(Math.random() * feedbackMessages.length)];
-    feedbackText.textContent = randomMessage;
-    feedbackMessage.classList.remove('hidden', 'opacity-0');
-    feedbackMessage.classList.add('opacity-100');
-    setTimeout(() => {
-        feedbackMessage.classList.remove('opacity-100');
-        feedbackMessage.classList.add('opacity-0');
-        setTimeout(() => {
-            feedbackMessage.classList.add('hidden');
-        }, 300);
-    }, 2000);
-};
-        
         // --- INICIALIZAÇÃO ---
         const initFirebase = () => {
             try {
@@ -212,6 +190,10 @@ const showFeedback = () => {
 
         const handleAuthStateChanged = user => {
             const telaLoginDiv = document.getElementById('tela-login');
+            // Cancela listeners antigos para evitar múltiplas execuções
+            listeners.forEach(unsubscribe => unsubscribe());
+            listeners = [];
+
             if (user) {
                 userId = user.uid;
                 atualizarTituloMes();
@@ -245,6 +227,7 @@ const showFeedback = () => {
 
         // --- NAVEGAÇÃO DE TEMPO ---
         const navegarMes = (direcao) => {
+            dataDeReferencia.setDate(1); // Evita bugs em meses com diferentes números de dias
             dataDeReferencia.setMonth(dataDeReferencia.getMonth() + direcao);
             atualizarTituloMes();
             carregarDados();
@@ -257,46 +240,278 @@ const showFeedback = () => {
         // --- CARREGAMENTO DE DADOS ---
         const carregarDados = () => {
             if (!userId) return;
-            const { primeiroDia, ultimoDia } = getLimitesDoMes();
 
-            // Carrega TODAS as receitas e despesas e filtra no cliente
-            db.collection(`users/${userId}/receitas`).onSnapshot(snapshot => {
-                const todasReceitas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                receitas = filtrarPorMes(todasReceitas, primeiroDia, ultimoDia);
-                renderizarECalcular();
-            });
+            // Cancela listeners antigos antes de criar novos
+            listeners.forEach(unsubscribe => unsubscribe());
+            listeners = [];
 
-            db.collection(`users/${userId}/despesas`).onSnapshot(snapshot => {
-                const todasDespesas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                despesas = filtrarPorMes(todasDespesas, primeiroDia, ultimoDia);
-                renderizarECalcular();
-            });
-
-            db.collection(`users/${userId}/orcamentos`).onSnapshot(snapshot => {
+            // Carrega Orçamentos (são fixos, não dependem do mês)
+            const orcamentosListener = db.collection(`users/${userId}/orcamentos`).onSnapshot(snapshot => {
                 orcamentos = {};
                 snapshot.docs.forEach(doc => { orcamentos[doc.id] = doc.data(); });
                 atualizarSelectCategorias();
                 renderizarECalcular();
             });
+
+            // Carrega Receitas e Despesas (sem filtro de mês, para encontrar dados antigos)
+            const receitasListener = db.collection(`users/${userId}/receitas`).onSnapshot(snapshot => {
+                const todasReceitas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                receitas = filtrarPorMes(todasReceitas);
+                renderizarECalcular();
+            });
+
+            const despesasListener = db.collection(`users/${userId}/despesas`).onSnapshot(snapshot => {
+                const todasDespesas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                despesas = filtrarPorMes(todasDespesas);
+                renderizarECalcular();
+            });
+            
+            listeners.push(orcamentosListener, receitasListener, despesasListener);
         };
 
-        const filtrarPorMes = (items, primeiroDia, ultimoDia) => {
+        const filtrarPorMes = (items) => {
+            const { primeiroDia, ultimoDia } = getLimitesDoMes();
             return items.filter(item => {
-                const itemDate = item.data ? new Date(item.data + 'T00:00:00') : item.timestamp.toDate();
+                // Usa o campo 'data' se existir, senão usa o 'timestamp' para dados antigos
+                const itemDate = item.data ? new Date(item.data + 'T12:00:00') : (item.timestamp ? item.timestamp.toDate() : null);
+                if (!itemDate) return false;
                 return itemDate >= primeiroDia && itemDate <= ultimoDia;
             });
         };
         
         // --- RENDERIZAÇÃO E CÁLCULOS ---
-        // ... (as funções renderizarListas, renderizarOrcamentos, etc., foram movidas para cá para melhor organização)
+        const renderizarECalcular = () => {
+            renderizarListas();
+            calcularTotais();
+        };
+
+        const renderizarListas = () => {
+            renderizarLista(listaReceitasDiv, receitas, 'receita');
+            const despesasFixas = despesas.filter(d => d.tipo === 'fixa');
+            const despesasVariaveis = despesas.filter(d => d.tipo === 'variavel');
+            renderizarLista(listaDespesasFixasDiv, despesasFixas, 'despesaFixa');
+            renderizarLista(listaDespesasVariaveisDiv, despesasVariaveis, 'despesaVariavel');
+            renderizarOrcamentos();
+        };
+        
+        const renderizarLista = (div, lista, tipo) => {
+            div.innerHTML = lista.length === 0 ? `<p class="text-gray-400 italic">Nenhum item adicionado para este mês.</p>` : '';
+            lista.sort((a, b) => new Date(a.data) - new Date(b.data)); // Ordena por data
+            lista.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'flex justify-between items-center py-2 border-b last:border-b-0';
+                
+                const nome = item.totalParcelas ? `${item.nome} (${item.parcelaAtual}/${item.totalParcelas})` : item.nome;
+                const categoriaSpan = item.categoria ? `<span class="text-xs text-gray-400">(${item.categoria})</span>` : '';
+                const corValor = tipo === 'receita' ? 'text-green-600' : (item.tipo === 'fixa' ? 'text-red-600' : 'text-orange-600');
+                
+                itemDiv.innerHTML = `
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-600">${nome}</span>
+                        ${categoriaSpan}
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-semibold ${corValor}">${formatarMoeda(item.valor)}</span>
+                        <button onclick="editarItem('${item.id}', '${tipo}')" class="text-blue-500 hover:text-blue-700 p-1 text-xs">Editar</button>
+                        <button onclick="removerItem('${tipo}', '${item.id}')" class="bg-red-100 text-red-600 p-1 rounded-full hover:bg-red-200">
+                           <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm6 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
+                        </button>
+                    </div>`;
+                div.appendChild(itemDiv);
+            });
+        };
+
+        const renderizarOrcamentos = () => {
+            listaOrcamentosDiv.innerHTML = Object.keys(orcamentos).length === 0 ? '<p class="text-gray-400 italic md:col-span-2">Nenhum orçamento definido.</p>' : '';
+            Object.entries(orcamentos).forEach(([categoria, data]) => {
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-xl shadow-lg p-4 flex flex-col justify-between border';
+                const idSeguro = categoria.replace(/\s+/g, '-');
+                card.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-lg font-semibold text-purple-700">${categoria}</span>
+                        <div>
+                           <button onclick="editarOrcamento('${categoria}')" class="text-blue-500 hover:text-blue-700 p-1 text-xs mr-1">Editar</button>
+                           <button onclick="removerItem('orcamento', '${categoria}')" class="bg-red-100 text-red-600 p-1 rounded-full hover:bg-red-200">
+                               <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm6 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
+                           </button>
+                        </div>
+                    </div>
+                    <div class="text-sm font-medium text-gray-500 mb-2"><span id="gasto-${idSeguro}" class="font-bold"></span> / ${formatarMoeda(data.valor)}</div>
+                    <div class="progress-bar-container"><div id="progresso-${idSeguro}" class="progress-bar bg-purple-400" style="width: 0%;"></div></div>`;
+                listaOrcamentosDiv.appendChild(card);
+            });
+            atualizarProgressoOrcamentos();
+        };
 
         // --- FUNÇÕES DE DADOS (CRUD) ---
-        window.adicionarReceita = async () => { /* ... (código que você já tem, com a nova lógica de parcelas) ... */ };
-        window.adicionarDespesa = async (tipo) => { /* ... (código que você já tem, com a nova lógica de parcelas) ... */ };
-        // ... (resto das funções)
+        window.adicionarReceita = () => {
+            const nome = receitaNomeInput.value.trim();
+            const valor = parseFloat(receitaValorInput.value);
+            let data = receitaDataInput.value;
+            const parcelaAtual = parseInt(receitaParcelaInput.value) || 0;
+            const totalParcelas = parseInt(receitaTotalParcelasInput.value) || 0;
+            if (!data) data = new Date().toISOString().split('T')[0];
 
+            if (nome && !isNaN(valor) && valor > 0) {
+                if (totalParcelas > 1 && parcelaAtual > 0) {
+                    for (let i = 0; i < (totalParcelas - parcelaAtual + 1); i++) {
+                        const dataParcela = new Date(data + 'T12:00:00');
+                        dataParcela.setMonth(dataParcela.getMonth() + i);
+                        const doc = { nome, valor, data: dataParcela.toISOString().split('T')[0], parcelaAtual: parcelaAtual + i, totalParcelas, timestamp: new Date() };
+                        db.collection(`users/${userId}/receitas`).add(doc);
+                    }
+                } else {
+                    db.collection(`users/${userId}/receitas`).add({ nome, valor, data, timestamp: new Date() });
+                }
+                [receitaNomeInput, receitaValorInput, receitaDataInput, receitaParcelaInput, receitaTotalParcelasInput].forEach(i => i.value = '');
+            } else { alert("Por favor, preencha nome e valor válidos."); }
+        };
+        
+        window.adicionarDespesa = (tipo) => {
+            let nome, valor, data, categoria = '', parcelaAtual = 0, totalParcelas = 0;
+            let inputsParaLimpar = [];
+
+            if (tipo === 'fixa') {
+                nome = despesaFixaNomeInput.value.trim();
+                valor = parseFloat(despesaFixaValorInput.value);
+                data = despesaFixaDataInput.value;
+                parcelaAtual = parseInt(despesaFixaParcelaInput.value);
+                totalParcelas = parseInt(despesaFixaTotalParcelasInput.value);
+                inputsParaLimpar = [despesaFixaNomeInput, despesaFixaValorInput, despesaFixaDataInput, despesaFixaParcelaInput, despesaFixaTotalParcelasInput];
+            } else {
+                nome = despesaVariavelNomeInput.value.trim();
+                valor = parseFloat(despesaVariavelValorInput.value);
+                data = despesaVariavelDataInput.value;
+                categoria = despesaCategoriaSelect.value;
+                inputsParaLimpar = [despesaVariavelNomeInput, despesaVariavelValorInput, despesaVariavelDataInput, despesaCategoriaSelect];
+            }
+            if (!data) data = new Date().toISOString().split('T')[0];
+
+            if (nome && !isNaN(valor) && valor > 0) {
+                 if (tipo === 'fixa' && totalParcelas > 1 && parcelaAtual > 0) {
+                    for (let i = 0; i < (totalParcelas - parcelaAtual + 1); i++) {
+                        const dataParcela = new Date(data + 'T12:00:00');
+                        dataParcela.setMonth(dataParcela.getMonth() + i);
+                        const doc = { nome, valor, tipo, data: dataParcela.toISOString().split('T')[0], parcelaAtual: parcelaAtual + i, totalParcelas, timestamp: new Date() };
+                        db.collection(`users/${userId}/despesas`).add(doc);
+                    }
+                } else {
+                    db.collection(`users/${userId}/despesas`).add({ nome, valor, tipo, categoria, data, timestamp: new Date() });
+                }
+                inputsParaLimpar.forEach(i => i.value = '');
+                if (tipo === 'variavel') showFeedback();
+            } else { alert("Por favor, preencha nome e valor válidos."); }
+        };
+
+        window.adicionarOrcamento = async () => {
+            const nome = categoriaNomeInput.value.trim();
+            const valor = parseFloat(categoriaValorInput.value);
+            if (nome && !isNaN(valor) && valor > 0) {
+                await db.collection(`users/${userId}/orcamentos`).doc(nome).set({ valor });
+                categoriaNomeInput.value = ''; categoriaValorInput.value = '';
+            } else { alert("Por favor, insira um nome e um valor válido para o orçamento."); }
+        };
+        
+        window.removerItem = async (tipo, id) => {
+            const colecoes = { receita: 'receitas', despesaFixa: 'despesas', despesaVariavel: 'despesas', orcamento: 'orcamentos' };
+            const colecao = colecoes[tipo];
+            if (colecao) await db.collection(`users/${userId}/${colecao}`).doc(id).delete();
+        };
+
+        window.editarOrcamento = async (nomeAntigo) => {
+            const orcamentoAtual = orcamentos[nomeAntigo];
+            if (!orcamentoAtual) return;
+            const nomeNovo = prompt("Editar nome da categoria:", nomeAntigo);
+            const valorNovoStr = prompt("Editar valor do orçamento:", orcamentoAtual.valor);
+            if (nomeNovo === null || valorNovoStr === null) return;
+            const valorNovo = parseFloat(valorNovoStr);
+            if (!nomeNovo.trim() || isNaN(valorNovo) || valorNovo <= 0) return alert("Nome ou valor inválido.");
+            try {
+                if (nomeNovo !== nomeAntigo) {
+                    await db.collection(`users/${userId}/orcamentos`).doc(nomeAntigo).delete();
+                    await db.collection(`users/${userId}/orcamentos`).doc(nomeNovo).set({ valor: valorNovo });
+                } else {
+                    await db.collection(`users/${userId}/orcamentos`).doc(nomeAntigo).update({ valor: valorNovo });
+                }
+            } catch (error) { console.error("Erro ao atualizar orçamento: ", error); }
+        };
+        
+        window.editarItem = async (id, tipo) => {
+            const colecoes = { receita: 'receitas', despesaFixa: 'despesas', despesaVariavel: 'despesas' };
+            const colecao = colecoes[tipo];
+            if (!colecao) return;
+            try {
+                const docRef = db.collection(`users/${userId}/${colecao}`).doc(id);
+                const doc = await docRef.get();
+                if (!doc.exists) return;
+                const itemAtual = doc.data();
+                const nomeNovo = prompt("Editar nome:", itemAtual.nome);
+                const valorNovoStr = prompt("Editar valor:", itemAtual.valor);
+                if (nomeNovo === null || valorNovoStr === null) return;
+                const valorNovo = parseFloat(valorNovoStr);
+                if (!nomeNovo.trim() || isNaN(valorNovo) || valorNovo <= 0) return alert("Nome ou valor inválido.");
+                await docRef.update({ nome: nomeNovo, valor: valorNovo });
+            } catch (error) { console.error("Erro ao atualizar o item:", error); }
+        };
+
+        // --- FUNÇÕES UTILITÁRIAS ---
+        const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
+        const getLimitesDoMes = () => {
+            const primeiroDia = new Date(dataDeReferencia.getFullYear(), dataDeReferencia.getMonth(), 1);
+            const ultimoDia = new Date(dataDeReferencia.getFullYear(), dataDeReferencia.getMonth() + 1, 0);
+            return { primeiroDia, ultimoDia };
+        };
+        const showFeedback = () => {
+            feedbackText.textContent = feedbackMessages[Math.floor(Math.random() * feedbackMessages.length)];
+            feedbackMessage.classList.remove('hidden', 'opacity-0');
+            setTimeout(() => {
+                feedbackMessage.classList.remove('opacity-0');
+                setTimeout(() => { feedbackMessage.classList.add('hidden'); }, 300);
+            }, 2000);
+        };
+        const calcularTotais = () => {
+            const totalReceitas = receitas.reduce((acc, item) => acc + item.valor, 0);
+            const totalDespesas = despesas.reduce((acc, item) => acc + item.valor, 0);
+            const saldoFinal = totalReceitas - totalDespesas;
+            totalReceitasSpan.textContent = formatarMoeda(totalReceitas);
+            totalDespesasSpan.textContent = formatarMoeda(totalDespesas);
+            saldoFinalSpan.textContent = formatarMoeda(saldoFinal);
+            saldoFinalSpan.classList.toggle('text-red-600', saldoFinal < 0);
+            saldoFinalSpan.classList.toggle('text-green-600', saldoFinal >= 0);
+            atualizarProgressoOrcamentos();
+        };
+        const atualizarSelectCategorias = () => {
+            despesaCategoriaSelect.innerHTML = '<option value="">Selecione uma categoria</option>';
+            Object.keys(orcamentos).forEach(categoria => {
+                const option = document.createElement('option');
+                option.value = categoria;
+                option.textContent = categoria;
+                despesaCategoriaSelect.appendChild(option);
+            });
+        };
+        const atualizarProgressoOrcamentos = () => {
+            Object.keys(orcamentos).forEach(categoria => {
+                const despesasDaCategoria = despesas.filter(d => d.tipo === 'variavel' && d.categoria === categoria);
+                const totalGasto = despesasDaCategoria.reduce((acc, item) => acc + item.valor, 0);
+                const orcamentoTotal = orcamentos[categoria].valor;
+                const percentual = Math.min((totalGasto / orcamentoTotal) * 100, 100);
+                const idSeguro = categoria.replace(/\s+/g, '-');
+                const progressBar = document.querySelector(`#progresso-${idSeguro}`);
+                const totalGastoSpan = document.querySelector(`#gasto-${idSeguro}`);
+                if (progressBar) {
+                    progressBar.style.width = `${percentual}%`;
+                    progressBar.className = 'progress-bar'; // Reset
+                    if (percentual >= 100) progressBar.classList.add('bg-red-500');
+                    else if (percentual > 75) progressBar.classList.add('bg-yellow-500');
+                    else progressBar.classList.add('bg-purple-400');
+                }
+                if (totalGastoSpan) totalGastoSpan.textContent = `${formatarMoeda(totalGasto)}`;
+            });
+        };
+
+        // --- INICIALIZAÇÃO DA APLICAÇÃO ---
         window.onload = initFirebase;
     </script>
 </body>
 </html>
-
